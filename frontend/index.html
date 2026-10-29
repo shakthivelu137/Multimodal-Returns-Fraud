@@ -1,0 +1,151 @@
+html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fraudulent Return Detection</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f2f5f9;
+            margin: 0;
+            padding: 30px;
+        }
+
+        .container {
+            max-width: 650px;
+            margin: auto;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 3px 15px #0001;
+        }
+
+        h1 {
+            color: #183153;
+            text-align: center;
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+            margin-top: 6px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+
+        button {
+            width: 100%;
+            padding: 13px;
+            margin-top: 22px;
+            background: #1769e0;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            white-space: pre-line;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+    <h1>Fraudulent Product Return Detection</h1>
+    <p>Enter return claim details to test the machine learning model.</p>
+
+    <form id="claimForm">
+        <label>Order Value</label>
+        <input id="order_value_inr" type="number" value="1000" min="0" required>
+
+        <label>Days Since Delivery</label>
+        <input id="days_since_delivery" type="number" value="5" min="0" required>
+
+        <label>Number of Images</label>
+        <input id="num_images" type="number" value="0" min="0" required>
+
+        <label>Complaint Text</label>
+        <textarea id="complaint_text" required
+            placeholder="Example: Item arrived broken"></textarea>
+
+        <button type="submit">Check Return Claim</button>
+    </form>
+
+    <div id="result"></div>
+</div>
+
+<script>
+document.getElementById("claimForm").addEventListener("submit", async function(event) {
+    event.preventDefault();
+
+    const result = document.getElementById("result");
+    result.textContent = "Checking claim...";
+    
+    const data = {
+        order_value_inr: Number(document.getElementById("order_value_inr").value),
+        days_since_delivery: Number(document.getElementById("days_since_delivery").value),
+        num_images: Number(document.getElementById("num_images").value),
+        image_blur_score: 0,
+        exif_timestamp_gap_days: 0,
+        image_reuse_flag: 0,
+        clip_image_text_sim: 0.7,
+        clip_image_listing_sim: 0.7,
+        vqa_defect_visible: 0,
+        claim_consistency_score: 0.8,
+        cust_total_order_12m: 10,
+        cust_return_rate_12m: 0.1,
+        cust_account_age_days: 365,
+        cust_prev_fraud_flags: 0,
+        refund_requested_amount: 1000,
+        delivery_pin_code_risk: 0.1,
+        category: "electronics",
+        return_reason_code: "damaged",
+        complaint_language: "English",
+        payment_mode: "online",
+        complaint_text: document.getElementById("complaint_text").value
+    };
+
+    try {
+        const response = await fetch("http://127.0.0.1:8000/predict", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(data)
+        });
+
+        const answer = await response.json();
+
+        if (!response.ok) {
+            throw new Error(JSON.stringify(answer));
+        }
+
+        result.textContent =
+            "Prediction: " + answer.prediction +
+            "\nRisk Level: " + answer.result +
+            "\nFraud Probability: " + answer.fraud_probability +
+            "\n\n" + answer.disclaimer;
+
+    } catch (error) {
+        result.textContent =
+            "Could not check claim. Please ensure the API is running.\n" +
+            error.message;
+    }
+});
+</script>
+</body>
+</html>
+```
