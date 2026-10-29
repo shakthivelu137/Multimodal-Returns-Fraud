@@ -1,7 +1,7 @@
-
 import streamlit as st
 import pandas as pd
-import requests
+import numpy as np
+import joblib
 from pathlib import Path
 
 # Page configuration
@@ -11,20 +11,26 @@ st.set_page_config(
     layout="wide"
 )
 
-# API address
-API_URL = "http://127.0.0.1:8000"
-
-# Project folder
+# Project folder & Model loading
 PROJECT_DIR = Path(__file__).resolve().parent
+MODEL_PATH = PROJECT_DIR / "models" / "combined_fraud_model.pkl"
+
+@st.cache_resource
+def load_fraud_model():
+    if MODEL_PATH.exists():
+        return joblib.load(MODEL_PATH)
+    return None
+
+model = load_fraud_model()
 
 st.title("🛡️ Fraudulent Product Return Detection")
 st.write(
-    "Analyze return claims using a machine-learning model "
+    "Analyze return claims using a multimodal machine-learning model "
     "and review potentially suspicious transactions."
 )
 
 st.warning(
-    "This is an experimental model. Predictions are not proof of fraud."
+    "This is an operational decision support model. Predictions are not proof of fraud."
 )
 
 # Sidebar
@@ -33,25 +39,14 @@ page = st.sidebar.radio(
     ["Dashboard", "Predict Fraud", "CSV Analysis"]
 )
 
-# Dashboard page
+# ----------------- Dashboard Page -----------------
 if page == "Dashboard":
     st.header("Project Dashboard")
 
-    try:
-        response = requests.get(
-            f"{API_URL}/health",
-            timeout=5
-        )
-
-        if response.ok:
-            st.success("API server is connected.")
-        else:
-            st.error("API returned an error.")
-
-    except requests.RequestException:
-        st.error(
-            "API is not reachable. Start your FastAPI server first."
-        )
+    if model is not None:
+        st.success("✅ Machine Learning Model is active & loaded successfully.")
+    else:
+        st.error("❌ Model not found in models/combined_fraud_model.pkl.")
 
     cleaned_file = PROJECT_DIR / "data" / "cleaned_return_claims.csv"
 
@@ -59,13 +54,11 @@ if page == "Dashboard":
         df = pd.read_csv(cleaned_file)
 
         col1, col2, col3 = st.columns(3)
-
-        col1.metric("Total Claims", f"{len(df):,}")
+        col1.metric("Total Ingested Claims", f"{len(df):,}")
 
         if "is_fraud" in df.columns:
             fraud_count = int(df["is_fraud"].sum())
             col2.metric("Fraud-Labeled Claims", f"{fraud_count:,}")
-
             col3.metric(
                 "Fraud-Labeled Percentage",
                 f"{df['is_fraud'].mean() * 100:.2f}%"
@@ -81,242 +74,130 @@ if page == "Dashboard":
 
         st.subheader("Dataset Preview")
         st.dataframe(df.head(10), use_container_width=True)
-
     else:
-        st.info(
-            "Cleaned dataset not found at "
-            "data/cleaned_return_claims.csv. "
-            "You can still test the API under Predict Fraud."
-        )
+        st.info("Cleaned dataset not found at data/cleaned_return_claims.csv.")
 
-# Prediction page
+# ----------------- Prediction Page -----------------
 elif page == "Predict Fraud":
     st.header("Predict a Return Claim")
-
-    st.write(
-        "Enter the claim information below. "
-        "The values will be sent to your existing API."
-    )
+    st.write("Enter the claim information below to evaluate in real-time.")
 
     with st.form("claim_form"):
-        category = st.selectbox(
+        col_a, col_b = st.columns(2)
+        category = col_a.selectbox(
             "Product Category",
-            ["Electronics", "Fashion", "Home",
-             "Beauty", "Footwear", "Appliances"]
+            ["Electronics", "Fashion", "Home", "Beauty", "Footwear", "Appliances"]
         )
-
-        return_reason = st.selectbox(
+        return_reason = col_b.selectbox(
             "Return Reason",
-            ["Damaged", "Missing parts", "Not as described",
-             "Quality issue", "Size issue", "Wrong item"]
+            ["Damaged", "Missing parts", "Not as described", "Quality issue", "Size issue", "Wrong item"]
         )
 
-        order_value = st.number_input(
-            "Order Value (INR)",
-            min_value=0.0,
-            value=1000.0
-        )
+        col_c, col_d = st.columns(2)
+        order_value = col_c.number_input("Order Value (INR)", min_value=0.0, value=2500.0)
+        days_since_delivery = col_d.number_input("Days Since Delivery", min_value=0.0, value=3.0)
 
-        days_since_delivery = st.number_input(
-            "Days Since Delivery",
-            min_value=0,
-            value=3
-        )
-
-        num_images = st.number_input(
-            "Number of Images",
-            min_value=0,
-            value=0
-        )
-
-        image_blur_score = st.slider(
-            "Image Blur Score",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.0
-        )
-
-        exif_gap = st.number_input(
-            "EXIF Timestamp Gap (Days)",
-            min_value=0,
-            value=0
-        )
-
-        image_reuse_flag = st.selectbox(
-            "Image Reuse Flag",
-            [0, 1]
-        )
-
-        clip_text_sim = st.slider(
-            "Image-Text Similarity",
-            0.0, 1.0, 0.7
-        )
-
-        clip_listing_sim = st.slider(
-            "Image-Listing Similarity",
-            0.0, 1.0, 0.7
-        )
-
-        vqa_defect_visible = st.selectbox(
-            "VQA Defect Visible",
-            [0, 1]
-        )
-
-        claim_consistency_score = st.slider(
-            "Claim Consistency Score",
-            0.0, 1.0, 0.8
-        )
-
-        cust_total_orders = st.number_input(
-            "Customer Orders in Last 12 Months",
-            min_value=0,
-            value=5
-        )
-
-        cust_return_rate = st.slider(
-            "Customer Return Rate",
-            0.0, 1.0, 0.1
-        )
-
-        cust_account_age = st.number_input(
-            "Customer Account Age (Days)",
-            min_value=0,
-            value=365
-        )
-
-        cust_prev_fraud_flags = st.number_input(
-            "Previous Fraud Flags",
-            min_value=0,
-            value=0
-        )
-
-        refund_amount = st.number_input(
-            "Refund Requested Amount (INR)",
-            min_value=0.0,
-            value=1000.0
-        )
-
-        delivery_pincode_risk = st.slider(
-            "Delivery PIN Code Risk",
-            0.0, 1.0, 0.1
-        )
-
-        payment_mode = st.selectbox(
-            "Payment Mode",
-            ["UPI", "Card", "Cash on Delivery", "Net Banking"]
-        )
-
-        complaint_language = st.selectbox(
-            "Complaint Language",
-            ["English", "Tamil", "Hindi", "Other"]
-        )
+        col_e, col_f = st.columns(2)
+        payment_mode = col_e.selectbox("Payment Mode", ["COD", "UPI", "Card", "NetBanking", "Wallet"])
+        complaint_language = col_f.selectbox("Complaint Language", ["en", "hi", "ta", "hinglish"])
 
         complaint_text = st.text_area(
-            "Customer Complaint",
-            "Product received in good condition."
+            "Customer Complaint Text",
+            value="Item received was damaged and broken inside the packaging."
         )
 
-        submitted = st.form_submit_button("Analyze Claim")
+        st.markdown("#### Multimodal & Claim-Consistency (CCS) Signals")
+        m1, m2 = st.columns(2)
+        clip_image_text_sim = m1.slider("CLIP Image-Text Similarity (0 = Mismatch, 1 = Perfect)", 0.0, 1.0, 0.75)
+        clip_image_listing_sim = m2.slider("CLIP Catalog-Listing Match (0 = Different Item, 1 = Same)", 0.0, 1.0, 0.80)
 
-    if submitted:
-        # These names must match the ReturnClaim schema in api/main.py.
-        payload = {
-            "category": category,
-            "return_reason_code": return_reason,
-            "order_value_inr": order_value,
-            "days_since_delivery": days_since_delivery,
-            "num_images": num_images,
-            "image_blur_score": image_blur_score,
-            "exif_timestamp_gap_days": exif_gap,
-            "image_reuse_flag": image_reuse_flag,
-            "clip_image_text_sim": clip_text_sim,
-            "clip_image_listing_sim": clip_listing_sim,
-            "vqa_defect_visible": vqa_defect_visible,
-            "claim_consistency_score": claim_consistency_score,
-            "cust_total_orders_12m": cust_total_orders,
-            "cust_return_rate_12m": cust_return_rate,
-            "cust_account_age_days": cust_account_age,
-            "cust_prev_fraud_flags": cust_prev_fraud_flags,
-            "refund_requested_amount": refund_amount,
-            "delivery_pincode_risk": delivery_pincode_risk,
-            "payment_mode": payment_mode,
-            "complaint_language": complaint_language,
-            "complaint_text": complaint_text
-        }
+        m3, m4 = st.columns(2)
+        vqa_defect_visible = m3.selectbox("VQA Defect Visible in Photo?", [1.0, 0.0], index=0)
+        image_reuse_flag = m4.selectbox("Image Reused in Previous Claims? (pHash)", [0, 1], index=0)
 
-        try:
-            result = requests.post(
-                f"{API_URL}/predict",
-                json=payload,
-                timeout=30
-            )
+        m5, m6 = st.columns(2)
+        claim_consistency_score = m5.slider("Claim-Consistency Score (CCS)", 0.0, 1.0, 0.82)
+        delivery_pincode_risk = m6.slider("Delivery Pincode Risk", 0.0, 1.0, 0.08)
 
-            if result.ok:
-                data = result.json()
+        st.markdown("#### Customer Behavioral History")
+        b1, b2, b3 = st.columns(3)
+        cust_total_orders = b1.number_input("Orders (Last 12m)", min_value=0, value=15)
+        cust_return_rate = b2.slider("Customer Return Rate", 0.0, 1.0, 0.10)
+        cust_account_age = b3.number_input("Account Age (Days)", min_value=0, value=365)
 
-                st.subheader("Prediction Result")
-                st.json(data)
+        submit = st.form_submit_button("Run Fraud Prediction", use_container_width=True)
 
-                if data.get("prediction") == 1:
-                    st.error("Model flagged this claim as potentially fraudulent.")
-                elif data.get("prediction") == 0:
-                    st.success("Model classified this claim as likely genuine.")
+    if submit:
+        if model is None:
+            st.error("Model could not be loaded.")
+        else:
+            payload = {
+                "order_value_inr": float(order_value),
+                "days_since_delivery": float(days_since_delivery),
+                "num_images": 2,
+                "image_blur_score": 0.15,
+                "exif_timestamp_gap_days": 1.0,
+                "image_reuse_flag": int(image_reuse_flag),
+                "clip_image_text_sim": float(clip_image_text_sim),
+                "clip_image_listing_sim": float(clip_image_listing_sim),
+                "vqa_defect_visible": float(vqa_defect_visible),
+                "claim_consistency_score": float(claim_consistency_score),
+                "cust_total_orders_12m": int(cust_total_orders),
+                "cust_return_rate_12m": float(cust_return_rate),
+                "cust_account_age_days": int(cust_account_age),
+                "cust_prev_fraud_flags": 0,
+                "refund_requested_amount": float(order_value),
+                "delivery_pincode_risk": float(delivery_pincode_risk),
+                "category": category,
+                "return_reason_code": return_reason,
+                "complaint_language": complaint_language,
+                "payment_mode": payment_mode,
+                "complaint_text": complaint_text
+            }
 
-                if "fraud_probability_percent" in data:
-                    st.metric(
-                        "Reported Fraud Probability",
-                        f"{data['fraud_probability_percent']}%"
-                    )
+            input_data = pd.DataFrame([payload])
+            prediction = int(model.predict(input_data)[0])
+            probabilities = model.predict_proba(input_data)[0]
+            fraud_index = list(model.classes_).index(1)
+            fraud_probability = float(probabilities[fraud_index])
 
-                st.caption(
-                    "Experimental prediction only. Review the claim "
-                    "before making any decision."
-                )
+            st.divider()
+            st.subheader("Prediction Result")
+            res_col1, res_col2 = st.columns(2)
 
+            if prediction == 1:
+                res_col1.error("🚨 Classification: **Potentially Fraudulent / Abusive**")
             else:
-                st.error(f"API error: {result.status_code}")
-                st.code(result.text)
+                res_col1.success("✅ Classification: **Likely Genuine Return**")
 
-        except requests.RequestException as error:
-            st.error(f"Could not connect to the API: {error}")
+            res_col2.metric("Fraud Probability", f"{fraud_probability * 100:.2f}%")
 
-# CSV analysis page
+            if image_reuse_flag == 1:
+                st.warning("⚠️ Critical Signal: Photo hash matched a previously submitted return claim.")
+            if vqa_defect_visible == 0:
+                st.info("ℹ️ Visual inspection signal: Claimed defect not visibly verified in image.")
+
+# ----------------- CSV Analysis Page -----------------
 elif page == "CSV Analysis":
-    st.header("Analyze a CSV Dataset")
+    st.header("Dataset Analysis & Visualizations")
+    cleaned_file = PROJECT_DIR / "data" / "cleaned_return_claims.csv"
 
-    uploaded_file = st.file_uploader(
-        "Upload your return claims CSV",
-        type=["csv"]
-    )
+    if cleaned_file.exists():
+        df = pd.read_csv(cleaned_file)
+        st.write(f"Displaying statistics for **{len(df):,}** return records.")
 
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-
-            st.success("CSV loaded successfully.")
-
-            col1, col2 = st.columns(2)
-            col1.metric("Rows", f"{len(df):,}")
-            col2.metric("Columns", f"{len(df.columns):,}")
-
-            st.subheader("Data Preview")
-            st.dataframe(df.head(20), use_container_width=True)
-
-            st.subheader("Missing Values")
-            missing = df.isnull().sum()
-            missing = missing[missing > 0]
-
-            if missing.empty:
-                st.write("No missing values found.")
-            else:
-                st.dataframe(
-                    missing.rename("Missing Count"),
-                    use_container_width=True
-                )
-
-            if "is_fraud" in df.columns:
-                st.subheader("Fraud Label Distribution")
-                st.bar_chart(df["is_fraud"].value_counts())
-
-        except Exception as error:
-            st.error(f"Could not read the CSV: {error}")
+        tab1, tab2 = st.tabs(["Category Analysis", "Return Reason Breakdown"])
+        with tab1:
+            if "category" in df.columns and "is_fraud" in df.columns:
+                cat_summary = df.groupby("category")["is_fraud"].agg(["count", "mean"]).reset_index()
+                cat_summary["Fraud Rate %"] = (cat_summary["mean"] * 100).round(2)
+                st.dataframe(cat_summary[["category", "count", "Fraud Rate %"]], use_container_width=True)
+                st.bar_chart(data=cat_summary, x="category", y="Fraud Rate %")
+        with tab2:
+            if "return_reason_code" in df.columns and "is_fraud" in df.columns:
+                reason_summary = df.groupby("return_reason_code")["is_fraud"].agg(["count", "mean"]).reset_index()
+                reason_summary["Fraud Rate %"] = (reason_summary["mean"] * 100).round(2)
+                st.dataframe(reason_summary[["return_reason_code", "count", "Fraud Rate %"]], use_container_width=True)
+                st.bar_chart(data=reason_summary, x="return_reason_code", y="Fraud Rate %")
+    else:
+        st.info("Dataset file not found.")
